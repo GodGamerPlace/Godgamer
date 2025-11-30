@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { startGame, sendAnswer, sendRealAnswer, undoLastTurn } from './services/gemini';
 import { playSound } from './services/audio';
 import { KNOWLEDGE_BASE, SCORES_STORAGE_KEY } from './constants';
@@ -84,7 +84,7 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
   }
 
   return (
-    <div className={`w-40 h-40 md:w-64 md:h-64 relative transition-all duration-500 ${emotion === 'thinking' ? 'animate-pulse' : 'animate-float'}`}>
+    <div className={`w-32 h-32 md:w-56 md:h-56 relative transition-all duration-500 ${emotion === 'thinking' ? 'animate-pulse' : 'animate-float'}`}>
       <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" className="w-full h-full filter drop-shadow-2xl">
         {/* Turban/Hat */}
         <path d="M40 80 Q120 -20 200 80" className={getTurbanColor()} />
@@ -107,8 +107,8 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
       </svg>
       
       {/* Hands (Simple circles floating) */}
-      <div className={`absolute -left-4 top-20 md:top-32 w-8 h-8 md:w-12 md:h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'thinking' ? 'top-16 md:top-20' : ''}`}></div>
-      <div className={`absolute -right-4 top-20 md:top-32 w-8 h-8 md:w-12 md:h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'celebrate' ? '-top-6 md:-top-10' : ''}`}></div>
+      <div className={`absolute -left-2 top-20 md:top-28 w-6 h-6 md:w-10 md:h-10 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'thinking' ? 'top-16 md:top-20' : ''}`}></div>
+      <div className={`absolute -right-2 top-20 md:top-28 w-6 h-6 md:w-10 md:h-10 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'celebrate' ? '-top-4 md:-top-8' : ''}`}></div>
     </div>
   );
 };
@@ -210,6 +210,23 @@ const App: React.FC = () => {
     
   }, [emotion, gameState, isLoading]);
 
+  // Report State to Parent Window (For embedding)
+  useEffect(() => {
+    if (window.parent !== window) {
+      window.parent.postMessage({
+        type: 'GAME_STATE_UPDATE',
+        payload: {
+          gameState,
+          currentText,
+          emotion,
+          options: currentOptions,
+          questionCount,
+          scores
+        }
+      }, '*');
+    }
+  }, [gameState, currentText, emotion, currentOptions, questionCount, scores]);
+
   const handleStart = async () => {
     playSound('click');
     setIsLoading(true);
@@ -282,6 +299,80 @@ const App: React.FC = () => {
     }
   };
 
+  const handleSubmitRealAnswer = async (overrideInput?: string) => {
+    const answerToSubmit = overrideInput || realAnswerInput;
+    if (!answerToSubmit.trim()) return;
+    
+    setIsLoading(true);
+    playSound('click');
+    try {
+        const response = await sendRealAnswer(answerToSubmit);
+        setCurrentText(response.content);
+        setEmotion(response.emotion);
+        setGameState('lost'); // Game completely over now
+    } catch(e) {
+        console.error(e);
+        setGameState('error');
+    } finally {
+        setIsLoading(false);
+    }
+  };
+
+  // --- External Control Listeners (Window Messages) ---
+  // This allows other websites or parent frames to control the game via postMessage
+  // Format: { type: 'CMD_START' } | { type: 'CMD_ANSWER', answer: 'Yes' } etc.
+  
+  // We use refs to access current state/handlers inside the event listener
+  const handlersRef = useRef({
+    handleStart,
+    handleAnswer,
+    handleUndo,
+    handleRestart,
+    handleSubmitRealAnswer
+  });
+
+  // Update refs when handlers change (though they are stable in this component structure usually, this is safer)
+  useEffect(() => {
+    handlersRef.current = {
+      handleStart,
+      handleAnswer,
+      handleUndo,
+      handleRestart,
+      handleSubmitRealAnswer
+    };
+  }, [handleStart, handleAnswer, handleUndo, handleRestart, handleSubmitRealAnswer]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      const data = event.data;
+      if (!data || !data.type) return;
+
+      switch (data.type) {
+        case 'CMD_START':
+          handlersRef.current.handleStart();
+          break;
+        case 'CMD_ANSWER':
+          if (data.answer) handlersRef.current.handleAnswer(data.answer);
+          break;
+        case 'CMD_UNDO':
+          handlersRef.current.handleUndo();
+          break;
+        case 'CMD_RESTART':
+          handlersRef.current.handleRestart();
+          break;
+        case 'CMD_REAL_ANSWER':
+          if (data.answer) {
+             setRealAnswerInput(data.answer);
+             handlersRef.current.handleSubmitRealAnswer(data.answer);
+          }
+          break;
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   const processResponse = (response: GameResponse, isUndo: boolean = false) => {
     setCurrentText(response.content);
     setEmotion(response.emotion);
@@ -316,23 +407,6 @@ const App: React.FC = () => {
     }
   };
 
-  const handleSubmitRealAnswer = async () => {
-    if (!realAnswerInput.trim()) return;
-    setIsLoading(true);
-    playSound('click');
-    try {
-        const response = await sendRealAnswer(realAnswerInput);
-        setCurrentText(response.content);
-        setEmotion(response.emotion);
-        setGameState('lost'); // Game completely over now
-    } catch(e) {
-        console.error(e);
-        setGameState('error');
-    } finally {
-        setIsLoading(false);
-    }
-  };
-
   const getConfidenceColor = (val: number) => {
     if (val < 30) return 'bg-gray-400';
     if (val < 60) return 'bg-yellow-400';
@@ -351,10 +425,11 @@ const App: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-orange-100 to-amber-200 flex flex-col items-center justify-center p-4 relative overflow-hidden">
+    // Replaced min-h-screen with h-full w-full overflow-y-auto for embedding support
+    <div className="h-full w-full bg-gradient-to-b from-orange-100 to-amber-200 flex flex-col items-center justify-center p-2 md:p-4 relative overflow-y-auto overflow-x-hidden">
       
       {/* Background Decor */}
-      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-10">
+      <div className="absolute top-0 left-0 w-full h-full pointer-events-none opacity-10 z-0">
         <svg width="100%" height="100%">
           <pattern id="pattern-circles" x="0" y="0" width="50" height="50" patternUnits="userSpaceOnUse">
             <circle cx="25" cy="25" r="10" fill="#f97316" />
@@ -364,7 +439,7 @@ const App: React.FC = () => {
       </div>
 
       {/* Top Bar UI */}
-      <div className="fixed top-2 left-2 md:top-4 md:left-4 z-20 flex gap-2">
+      <div className="absolute top-2 left-2 md:top-4 md:left-4 z-20 flex gap-2">
         <button 
           onClick={handleRestart}
           className="bg-white/90 p-2 md:p-3 rounded-full shadow-lg hover:scale-110 transition-transform text-amber-700"
@@ -376,7 +451,7 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      <div className="fixed top-2 right-2 md:top-4 md:right-4 z-20 flex gap-2">
+      <div className="absolute top-2 right-2 md:top-4 md:right-4 z-20 flex gap-2">
         <button 
           onClick={() => { playSound('pop'); setShowLeaderboard(true); }}
           className="bg-white/90 px-3 py-1 md:px-4 md:py-2 rounded-full shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-amber-800 font-bold text-sm md:text-base"
@@ -388,7 +463,7 @@ const App: React.FC = () => {
         </button>
       </div>
 
-      <div className="z-10 w-full max-w-xl flex flex-col items-center">
+      <div className="z-10 w-full max-w-xl flex flex-col items-center justify-center min-h-[500px]">
         
         {/* Question Counter & Undo */}
         {gameState === 'playing' && (
@@ -411,12 +486,12 @@ const App: React.FC = () => {
         )}
 
         {/* Character Area */}
-        <div className="mb-4 md:mb-8 transform transition-all duration-500 relative">
+        <div className="mb-4 md:mb-6 transform transition-all duration-500 relative">
           <Avatar emotion={emotion} />
           
            {/* Confidence Bubble */}
            {gameState === 'playing' && (
-             <div className="absolute -right-2 md:-right-4 top-1/2 transform -translate-y-1/2 bg-white/90 backdrop-blur-sm px-2 py-1 md:px-3 md:py-2 rounded-lg shadow-lg border border-amber-200 flex flex-col items-center gap-1 animate-float">
+             <div className="absolute -right-2 md:-right-8 top-1/2 transform -translate-y-1/2 bg-white/90 backdrop-blur-sm px-2 py-1 md:px-3 md:py-2 rounded-lg shadow-lg border border-amber-200 flex flex-col items-center gap-1 animate-float">
                 <span className="text-[8px] md:text-[10px] uppercase font-bold text-gray-500 tracking-wider">Certainty</span>
                 <div className="text-sm md:text-xl font-bold text-amber-600">{confidence}%</div>
                 <div className="w-8 md:w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
@@ -430,7 +505,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Dialogue Box */}
-        <div className="bg-white rounded-3xl p-6 md:p-8 shadow-2xl w-full text-center relative mb-6 md:mb-8 border-4 border-amber-300 min-h-[140px] md:min-h-[160px] flex items-center justify-center flex-col">
+        <div className="bg-white rounded-3xl p-6 shadow-2xl w-full text-center relative mb-6 border-4 border-amber-300 min-h-[140px] flex items-center justify-center flex-col">
           {/* Triangle pointer */}
           <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-b-[24px] border-b-amber-300"></div>
           <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 border-l-[16px] border-l-transparent border-r-[16px] border-r-transparent border-b-[20px] border-b-white"></div>
@@ -443,7 +518,7 @@ const App: React.FC = () => {
              </div>
           ) : (
             <>
-              <h2 className="text-xl md:text-3xl font-bold text-gray-800 leading-tight">
+              <h2 className="text-xl md:text-2xl font-bold text-gray-800 leading-tight">
                 {currentText}
               </h2>
               {gameState === 'playing' && (
@@ -499,7 +574,7 @@ const App: React.FC = () => {
           )}
 
           {gameState === 'playing' && !isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {currentOptions && currentOptions.length > 0 ? (
                 currentOptions.map((opt, idx) => (
                   <button 
@@ -541,7 +616,7 @@ const App: React.FC = () => {
                   onKeyDown={(e) => e.key === 'Enter' && handleSubmitRealAnswer()}
                 />
                 <button 
-                    onClick={handleSubmitRealAnswer}
+                    onClick={() => handleSubmitRealAnswer()}
                     disabled={!realAnswerInput.trim() || isLoading}
                     className="w-full bg-blue-600 text-white text-lg md:text-xl font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
