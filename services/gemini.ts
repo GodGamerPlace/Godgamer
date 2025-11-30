@@ -2,9 +2,17 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { GameResponse } from "../types";
 import { KNOWLEDGE_BASE } from "../constants";
 
-const apiKey = process.env.API_KEY || '';
+// Safe access to process.env for environments where it might not be defined
+const getEnvApiKey = () => {
+  try {
+    return process.env.API_KEY || '';
+  } catch (e) {
+    return '';
+  }
+};
 
-const ai = new GoogleGenAI({ apiKey });
+let currentApiKey = getEnvApiKey();
+let ai = new GoogleGenAI({ apiKey: currentApiKey });
 
 const modelName = "gemini-2.5-flash";
 
@@ -73,6 +81,15 @@ const responseSchema: Schema = {
 };
 
 let chatSession: any = null;
+
+// Allow external configuration of API key (for embedding scenarios)
+export const configureGame = (config: { apiKey?: string }) => {
+  if (config.apiKey) {
+    currentApiKey = config.apiKey;
+    ai = new GoogleGenAI({ apiKey: currentApiKey });
+    chatSession = null; // Reset session on key change
+  }
+};
 
 export const startGame = async (): Promise<GameResponse> => {
   try {

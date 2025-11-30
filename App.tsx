@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { startGame, sendAnswer, sendRealAnswer, undoLastTurn } from './services/gemini';
-import { playSound } from './services/audio';
+import { startGame, sendAnswer, sendRealAnswer, undoLastTurn, configureGame } from './services/gemini';
+import { playSound, playMusic, stopMusic, toggleMute } from './services/audio';
 import { KNOWLEDGE_BASE, SCORES_STORAGE_KEY } from './constants';
 import { GameState, GameResponse, Emotion } from './types';
 
@@ -172,6 +172,7 @@ const App: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [questionCount, setQuestionCount] = useState(0);
   const [showHint, setShowHint] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
   
   // Input for real answer
   const [realAnswerInput, setRealAnswerInput] = useState("");
@@ -202,13 +203,33 @@ const App: React.FC = () => {
 
   // Audio Effects trigger on emotion change
   useEffect(() => {
-    if (isLoading) return; // Don't play while loading/waiting
+    if (isLoading) return; // Don't play SFX while loading, allow music to run
     
     if (emotion === 'celebrate') playSound('win');
     else if (emotion === 'confused') playSound('confused');
     else if (emotion === 'thinking' && gameState === 'playing') playSound('thinking');
     
   }, [emotion, gameState, isLoading]);
+
+  // Music State Management
+  useEffect(() => {
+    // Stop music if game is in start or error, or reveal (before input)
+    if (gameState === 'start' || gameState === 'error' || gameState === 'reveal' || gameState === 'lost') {
+      stopMusic();
+    }
+    
+    // Play Gameplay music
+    if (gameState === 'playing' || gameState === 'won') {
+       // Note: 'won' here is technically "AI made a guess", not "AI verified correct"
+       // We pause music when a guess is made (which is the 'won' state in this flow before verification)
+       if (gameState === 'won') {
+         stopMusic();
+       } else {
+         playMusic('gameplay');
+       }
+    }
+    
+  }, [gameState]);
 
   // Report State to Parent Window (For embedding)
   useEffect(() => {
@@ -227,8 +248,15 @@ const App: React.FC = () => {
     }
   }, [gameState, currentText, emotion, currentOptions, questionCount, scores]);
 
+  const toggleMuteApp = () => {
+      const newState = !isMuted;
+      setIsMuted(newState);
+      toggleMute(newState);
+  };
+
   const handleStart = async () => {
     playSound('click');
+    playMusic('gameplay'); // Start music on user interaction
     setIsLoading(true);
     setEmotion('thinking');
     setGameState('playing');
@@ -245,12 +273,14 @@ const App: React.FC = () => {
       console.error(e);
       setCurrentText("My psychic powers are foggy (API Error). Try again?");
       setGameState('error');
+      stopMusic();
     } finally {
       setIsLoading(false);
     }
   };
 
   const handleRestart = () => {
+    stopMusic();
     playSound('pop');
     setGameState('start');
     setCurrentText("Think of a food item you ate recently...");
@@ -276,6 +306,7 @@ const App: React.FC = () => {
     } catch (e) {
       console.error(e);
       setGameState('error');
+      stopMusic();
     } finally {
       setIsLoading(false);
     }
@@ -318,29 +349,35 @@ const App: React.FC = () => {
     }
   };
 
+  const handleConfig = (apiKey: string) => {
+      if (apiKey) {
+          configureGame({ apiKey });
+          if (gameState === 'error') {
+             setCurrentText("My powers are restored! Click 'Play Again'.");
+          }
+      }
+  };
+
   // --- External Control Listeners (Window Messages) ---
-  // This allows other websites or parent frames to control the game via postMessage
-  // Format: { type: 'CMD_START' } | { type: 'CMD_ANSWER', answer: 'Yes' } etc.
-  
-  // We use refs to access current state/handlers inside the event listener
   const handlersRef = useRef({
     handleStart,
     handleAnswer,
     handleUndo,
     handleRestart,
-    handleSubmitRealAnswer
+    handleSubmitRealAnswer,
+    handleConfig
   });
 
-  // Update refs when handlers change (though they are stable in this component structure usually, this is safer)
   useEffect(() => {
     handlersRef.current = {
       handleStart,
       handleAnswer,
       handleUndo,
       handleRestart,
-      handleSubmitRealAnswer
+      handleSubmitRealAnswer,
+      handleConfig
     };
-  }, [handleStart, handleAnswer, handleUndo, handleRestart, handleSubmitRealAnswer]);
+  }, [handleStart, handleAnswer, handleUndo, handleRestart, handleSubmitRealAnswer, handleConfig]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -366,6 +403,11 @@ const App: React.FC = () => {
              handlersRef.current.handleSubmitRealAnswer(data.answer);
           }
           break;
+        case 'CMD_CONFIG':
+          if (data.apiKey) {
+              handlersRef.current.handleConfig(data.apiKey);
+          }
+          break;
       }
     };
 
@@ -381,7 +423,6 @@ const App: React.FC = () => {
     setCurrentOptions(response.options || []);
     
     if (response.type === 'question') {
-      // If it's an undo, decrement count (min 1). Else increment.
       if (isUndo) {
         setQuestionCount(prev => Math.max(1, prev - 1));
       } else {
@@ -389,6 +430,7 @@ const App: React.FC = () => {
       }
     } else if (response.type === 'guess') {
       setGameState('won'); // 'won' in this context means the AI made a guess, now we verify
+      stopMusic(); // Stop gameplay music when guessing
     }
   };
 
@@ -398,12 +440,17 @@ const App: React.FC = () => {
       setCurrentText("Aha! I knew it! My culinary senses never fail!");
       setScores(prev => ({ ...prev, ai: prev.ai + 1 }));
       setGameState('lost'); // Game over (AI won)
+      
+      // Start Celebration Song!
+      playMusic('win');
+      
     } else {
       setEmotion('confused');
       setCurrentText("What?! Impossible! I must have tasted the wrong spiritual curry. What was it actually?");
       playSound('lose');
       setScores(prev => ({ ...prev, user: prev.user + 1 }));
       setGameState('reveal'); // Move to reveal state
+      stopMusic();
     }
   };
 
@@ -425,7 +472,6 @@ const App: React.FC = () => {
   };
 
   return (
-    // Replaced min-h-screen with h-full w-full overflow-y-auto for embedding support
     <div className="h-full w-full bg-gradient-to-b from-orange-100 to-amber-200 flex flex-col items-center justify-center p-2 md:p-4 relative overflow-y-auto overflow-x-hidden">
       
       {/* Background Decor */}
@@ -448,6 +494,21 @@ const App: React.FC = () => {
           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
           </svg>
+        </button>
+        <button 
+          onClick={toggleMuteApp}
+          className="bg-white/90 p-2 md:p-3 rounded-full shadow-lg hover:scale-110 transition-transform text-amber-700"
+          title={isMuted ? "Unmute" : "Mute"}
+        >
+          {isMuted ? (
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 9.75L21 12m0 0l-3.75 2.25M21 12l-3.75-2.25M21 12l-3.75 2.25m-10.5-6l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+          ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
+               <path strokeLinecap="round" strokeLinejoin="round" d="M19.114 5.636a9 9 0 010 12.728M16.463 8.288a5.25 5.25 0 010 7.424M6.75 8.25l4.72-4.72a.75.75 0 011.28.53v15.88a.75.75 0 01-1.28.53l-4.72-4.72H4.51c-.88 0-1.704-.507-1.938-1.354A9.01 9.01 0 012.25 12c0-.83.112-1.633.322-2.396C2.806 8.756 3.63 8.25 4.51 8.25H6.75z" />
+            </svg>
+          )}
         </button>
       </div>
 
