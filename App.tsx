@@ -1,10 +1,161 @@
 import React, { useState, useEffect } from 'react';
-import Avatar from './components/Avatar';
-import Modal from './components/Modal';
 import { startGame, sendAnswer, sendRealAnswer } from './services/gemini';
 import { playSound } from './services/audio';
 import { KNOWLEDGE_BASE, SCORES_STORAGE_KEY } from './constants';
 import { GameState, GameResponse, Emotion } from './types';
+
+// --- Components ---
+
+interface AvatarProps {
+  emotion: Emotion;
+}
+
+const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
+  // Simple color mapping based on emotion
+  const getBaseColor = () => {
+    switch (emotion) {
+      case 'happy': return 'fill-yellow-400';
+      case 'celebrate': return 'fill-green-400';
+      case 'confused': return 'fill-purple-400';
+      case 'confident': return 'fill-orange-400';
+      default: return 'fill-amber-400';
+    }
+  };
+
+  const getEyeShape = () => {
+    if (emotion === 'happy' || emotion === 'celebrate') {
+      return (
+        <>
+          <path d="M70 90 Q85 80 100 90" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />
+          <path d="M140 90 Q155 80 170 90" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />
+        </>
+      );
+    }
+    if (emotion === 'confused') {
+      return (
+        <>
+          <circle cx="85" cy="90" r="8" fill="#333" />
+          <circle cx="155" cy="85" r="12" fill="#333" />
+          <path d="M70 70 L100 75" stroke="#333" strokeWidth="4" strokeLinecap="round" />
+          <path d="M140 65 L170 60" stroke="#333" strokeWidth="4" strokeLinecap="round" />
+        </>
+      );
+    }
+    if (emotion === 'thinking') {
+       return (
+        <>
+          <circle cx="85" cy="80" r="10" fill="#333" />
+          <circle cx="155" cy="80" r="10" fill="#333" />
+           <path d="M140 60 L170 50" stroke="#333" strokeWidth="4" strokeLinecap="round" />
+        </>
+       )
+    }
+    // Default
+    return (
+      <>
+        <circle cx="85" cy="90" r="10" fill="#333" />
+        <circle cx="155" cy="90" r="10" fill="#333" />
+        <path d="M70 70 Q85 65 100 70" stroke="#333" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.5"/>
+        <path d="M140 70 Q155 65 170 70" stroke="#333" strokeWidth="4" fill="none" strokeLinecap="round" opacity="0.5"/>
+      </>
+    );
+  };
+
+  const getMouthShape = () => {
+    if (emotion === 'happy' || emotion === 'celebrate') {
+        return <path d="M90 140 Q120 170 150 140" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />;
+    }
+    if (emotion === 'thinking') {
+        return <circle cx="120" cy="150" r="10" fill="#333" />;
+    }
+    if (emotion === 'confused') {
+        return <path d="M100 150 Q120 140 140 155" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />;
+    }
+    if (emotion === 'confident') {
+        return <path d="M90 150 Q120 150 150 145" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />;
+    }
+    // Idle
+    return <path d="M100 150 Q120 160 140 150" stroke="#333" strokeWidth="6" fill="none" strokeLinecap="round" />;
+  };
+
+  const getTurbanColor = () => {
+       if (emotion === 'celebrate') return 'fill-red-500';
+       return 'fill-red-600';
+  }
+
+  return (
+    <div className={`w-64 h-64 relative ${emotion === 'thinking' ? 'animate-pulse' : 'animate-float'}`}>
+      <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" className="w-full h-full filter drop-shadow-2xl">
+        {/* Turban/Hat */}
+        <path d="M40 80 Q120 -20 200 80" className={getTurbanColor()} />
+        <path d="M40 80 Q120 40 200 80 L200 100 Q120 60 40 100 Z" className="fill-red-700" />
+        <circle cx="120" cy="50" r="10" className="fill-yellow-400" />
+
+        {/* Head */}
+        <circle cx="120" cy="120" r="80" className={getBaseColor()} />
+        
+        {/* Ears */}
+        <circle cx="40" cy="120" r="15" className={getBaseColor()} />
+        <circle cx="200" cy="120" r="15" className={getBaseColor()} />
+
+        {/* Face Elements */}
+        {getEyeShape()}
+        {getMouthShape()}
+        
+        {/* Beard (optional, styled for Genie/Chef look) */}
+        <path d="M120 200 L110 220 L130 220 Z" fill="#333" />
+      </svg>
+      
+      {/* Hands (Simple circles floating) */}
+      <div className={`absolute -left-4 top-32 w-12 h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'thinking' ? 'top-20' : ''}`}></div>
+      <div className={`absolute -right-4 top-32 w-12 h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'celebrate' ? '-top-10' : ''}`}></div>
+    </div>
+  );
+};
+
+interface ModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}
+
+const Modal: React.FC<ModalProps> = ({ isOpen, onClose, title, children }) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      {/* Backdrop */}
+      <div 
+        className="absolute inset-0 bg-black/50 backdrop-blur-sm transition-opacity"
+        onClick={onClose}
+      ></div>
+      
+      {/* Content */}
+      <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden transform transition-all border-4 border-amber-300 max-h-[80vh] flex flex-col">
+        {/* Header */}
+        <div className="bg-amber-100 p-4 flex justify-between items-center border-b border-amber-200">
+          <h3 className="text-xl font-bold text-amber-900">{title}</h3>
+          <button 
+            onClick={onClose}
+            className="text-amber-700 hover:text-amber-900 hover:bg-amber-200 p-1 rounded-full transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        {/* Body */}
+        <div className="p-6 overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Main App ---
 
 interface Scores {
   user: number;
