@@ -2,7 +2,7 @@ import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { GameResponse } from "../types";
 import { KNOWLEDGE_BASE } from "../constants";
 
-// Safe access to process.env for environments where it might not be defined
+// Safe access to process.env
 const getEnvApiKey = () => {
   try {
     return process.env.API_KEY || '';
@@ -12,7 +12,8 @@ const getEnvApiKey = () => {
 };
 
 let currentApiKey = getEnvApiKey();
-let ai = new GoogleGenAI({ apiKey: currentApiKey });
+let ai: GoogleGenAI | null = null;
+let chatSession: any = null;
 
 const modelName = "gemini-2.5-flash";
 
@@ -80,20 +81,29 @@ const responseSchema: Schema = {
   required: ["type", "content", "emotion", "thinking", "confidence", "options"]
 };
 
-let chatSession: any = null;
+// Helper to get or create the AI instance
+const getAI = () => {
+  if (ai) return ai;
+  if (!currentApiKey) {
+    throw new Error("API Key is missing. Please set API_KEY in .env or configure it via postMessage.");
+  }
+  ai = new GoogleGenAI({ apiKey: currentApiKey });
+  return ai;
+};
 
 // Allow external configuration of API key (for embedding scenarios)
 export const configureGame = (config: { apiKey?: string }) => {
   if (config.apiKey) {
     currentApiKey = config.apiKey;
-    ai = new GoogleGenAI({ apiKey: currentApiKey });
+    ai = null; // Force recreation
     chatSession = null; // Reset session on key change
   }
 };
 
 export const startGame = async (): Promise<GameResponse> => {
   try {
-    chatSession = ai.chats.create({
+    const aiInstance = getAI();
+    chatSession = aiInstance.chats.create({
       model: modelName,
       config: {
         systemInstruction,
@@ -144,8 +154,6 @@ export const undoLastTurn = async (): Promise<GameResponse> => {
   }
 
   try {
-    // We ask the model to effectively "forget" the last user answer and re-ask the previous question.
-    // Since we can't delete history in this API, we instruct the model to backtrack.
     const result = await chatSession.sendMessage({ 
         message: "Wait, I clicked the wrong button! Please ignore my last answer completely. Ask me the previous question again, exactly as you did before, with the same options." 
     });
