@@ -1,0 +1,22 @@
+{
+  "short_name": "FoodGenie",
+  "name": "Food Akinator: Chef Genie",
+  "description": "The AI Chef that guesses what you ate!",
+  "icons": [
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3448/3448609.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "https://cdn-icons-png.flaticon.com/512/3448/3448609.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "theme_color": "#ffedd5",
+  "background_color": "#ffedd5",
+  "orientation": "portrait"
+}

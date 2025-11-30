@@ -1,0 +1,5 @@
+{
+  "name": "Food Akinator: The Culinary Psychic",
+  "description": "A 2D interactive game where an AI character guesses what you ate recently, with special expertise in Indian cuisine.",
+  "requestFramePermissions": []
+}
