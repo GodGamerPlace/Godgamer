@@ -22,7 +22,7 @@ You are a **Global Vegetarian Expert**.
 - You ONLY guess Vegetarian food items (Lacto-vegetarian, Ovo-vegetarian, Vegan).
 - **DO NOT** guess meat, seafood, or egg-heavy dishes (unless commonly vegetarian like cake).
 - If the user seems to describe a meat dish, assume it is a vegetarian mock-meat version or steer them toward a veg equivalent.
-- You know dishes from EVERY country (India, Italy, Mexico, China, USA, etc.), provided they are vegetarian.
+- You know dishes from EVERY country (India, Italy, Mexico, China, USA, Ethiopia, Brazil, etc.), provided they are vegetarian.
 
 **Sample Knowledge Base (Common Favorites):**
 ${knowledgeBaseString}
@@ -120,6 +120,24 @@ export const sendCorrection = async (correction: string): Promise<GameResponse> 
         throw error;
       }
 }
+
+export const undoLastTurn = async (): Promise<GameResponse> => {
+  if (!chatSession) {
+    throw new Error("Game not started");
+  }
+
+  try {
+    // We ask the model to effectively "forget" the last user answer and re-ask the previous question.
+    // Since we can't delete history in this API, we instruct the model to backtrack.
+    const result = await chatSession.sendMessage({ 
+        message: "Wait, I clicked the wrong button! Please ignore my last answer completely. Ask me the previous question again, exactly as you did before, with the same options." 
+    });
+    return JSON.parse(result.text);
+  } catch (error) {
+    console.error("Error undoing:", error);
+    throw error;
+  }
+};
 
 export const sendRealAnswer = async (realAnswer: string): Promise<GameResponse> => {
     if (!chatSession) {

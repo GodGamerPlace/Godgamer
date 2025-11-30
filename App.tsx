@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { startGame, sendAnswer, sendRealAnswer } from './services/gemini';
+import { startGame, sendAnswer, sendRealAnswer, undoLastTurn } from './services/gemini';
 import { playSound } from './services/audio';
 import { KNOWLEDGE_BASE, SCORES_STORAGE_KEY } from './constants';
 import { GameState, GameResponse, Emotion } from './types';
@@ -84,7 +84,7 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
   }
 
   return (
-    <div className={`w-64 h-64 relative ${emotion === 'thinking' ? 'animate-pulse' : 'animate-float'}`}>
+    <div className={`w-40 h-40 md:w-64 md:h-64 relative transition-all duration-500 ${emotion === 'thinking' ? 'animate-pulse' : 'animate-float'}`}>
       <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" className="w-full h-full filter drop-shadow-2xl">
         {/* Turban/Hat */}
         <path d="M40 80 Q120 -20 200 80" className={getTurbanColor()} />
@@ -107,8 +107,8 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
       </svg>
       
       {/* Hands (Simple circles floating) */}
-      <div className={`absolute -left-4 top-32 w-12 h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'thinking' ? 'top-20' : ''}`}></div>
-      <div className={`absolute -right-4 top-32 w-12 h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'celebrate' ? '-top-10' : ''}`}></div>
+      <div className={`absolute -left-4 top-20 md:top-32 w-8 h-8 md:w-12 md:h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'thinking' ? 'top-16 md:top-20' : ''}`}></div>
+      <div className={`absolute -right-4 top-20 md:top-32 w-8 h-8 md:w-12 md:h-12 rounded-full border-4 border-amber-600 bg-amber-400 transition-all duration-500 ${emotion === 'celebrate' ? '-top-6 md:-top-10' : ''}`}></div>
     </div>
   );
 };
@@ -264,7 +264,25 @@ const App: React.FC = () => {
     }
   };
 
-  const processResponse = (response: GameResponse) => {
+  const handleUndo = async () => {
+    if (isLoading || questionCount <= 1) return;
+    playSound('click');
+    setIsLoading(true);
+    setEmotion('thinking');
+    setShowHint(false);
+    
+    try {
+      const response = await undoLastTurn();
+      processResponse(response, true);
+    } catch (e) {
+      console.error(e);
+      setGameState('error');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const processResponse = (response: GameResponse, isUndo: boolean = false) => {
     setCurrentText(response.content);
     setEmotion(response.emotion);
     setCurrentThinking(response.thinking || "I'm meditating on your food waves...");
@@ -272,7 +290,12 @@ const App: React.FC = () => {
     setCurrentOptions(response.options || []);
     
     if (response.type === 'question') {
-      setQuestionCount(prev => prev + 1);
+      // If it's an undo, decrement count (min 1). Else increment.
+      if (isUndo) {
+        setQuestionCount(prev => Math.max(1, prev - 1));
+      } else {
+        setQuestionCount(prev => prev + 1);
+      }
     } else if (response.type === 'guess') {
       setGameState('won'); // 'won' in this context means the AI made a guess, now we verify
     }
@@ -341,49 +364,62 @@ const App: React.FC = () => {
       </div>
 
       {/* Top Bar UI */}
-      <div className="fixed top-4 left-4 z-20 flex gap-2">
+      <div className="fixed top-2 left-2 md:top-4 md:left-4 z-20 flex gap-2">
         <button 
           onClick={handleRestart}
-          className="bg-white/90 p-3 rounded-full shadow-lg hover:scale-110 transition-transform text-amber-700"
+          className="bg-white/90 p-2 md:p-3 rounded-full shadow-lg hover:scale-110 transition-transform text-amber-700"
           title="Restart Game"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-6 h-6">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 md:w-6 md:h-6">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
           </svg>
         </button>
       </div>
 
-      <div className="fixed top-4 right-4 z-20 flex gap-2">
+      <div className="fixed top-2 right-2 md:top-4 md:right-4 z-20 flex gap-2">
         <button 
           onClick={() => { playSound('pop'); setShowLeaderboard(true); }}
-          className="bg-white/90 px-4 py-2 rounded-full shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-amber-800 font-bold"
+          className="bg-white/90 px-3 py-1 md:px-4 md:py-2 rounded-full shadow-lg hover:scale-105 transition-transform flex items-center gap-2 text-amber-800 font-bold text-sm md:text-base"
         >
-           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-5 h-5 text-yellow-500">
+           <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4 md:w-5 md:h-5 text-yellow-500">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 18.75h-9m9 0a3 3 0 013 3h-15a3 3 0 013-3m9 0v-3.375c0-.621-.503-1.125-1.125-1.125h-.871M7.5 18.75v-3.375c0-.621.504-1.125 1.125-1.125h.872m5.007 0H9.497m5.007 0V5.625a2.063 2.063 0 00-2.063-2.063h-3.374a2.063 2.063 0 00-2.063 2.063v7.875" />
           </svg>
           {scores.user} - {scores.ai}
         </button>
       </div>
 
-      <div className="z-10 w-full max-w-2xl flex flex-col items-center">
+      <div className="z-10 w-full max-w-xl flex flex-col items-center">
         
-        {/* Question Counter (Only when playing) */}
+        {/* Question Counter & Undo */}
         {gameState === 'playing' && (
-          <div className="bg-white/60 backdrop-blur-sm rounded-full px-4 py-1 mb-4 shadow text-sm font-semibold text-amber-800">
-            Question #{questionCount + 1}
+          <div className="flex items-center gap-2 mb-4">
+             <div className="bg-white/60 backdrop-blur-sm rounded-full px-4 py-1 shadow text-sm font-semibold text-amber-800">
+                Question #{questionCount + 1}
+             </div>
+             {questionCount > 1 && !isLoading && (
+                 <button 
+                   onClick={handleUndo}
+                   className="bg-white/60 backdrop-blur-sm p-1.5 rounded-full shadow text-amber-700 hover:bg-amber-100 transition-colors"
+                   title="Undo Last Answer"
+                 >
+                   <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className="w-4 h-4">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 15L3 9m0 0l6-6M3 9h12a6 6 0 010 12h-3" />
+                   </svg>
+                 </button>
+             )}
           </div>
         )}
 
         {/* Character Area */}
-        <div className="mb-8 transform transition-all duration-500 relative">
+        <div className="mb-4 md:mb-8 transform transition-all duration-500 relative">
           <Avatar emotion={emotion} />
           
            {/* Confidence Bubble */}
            {gameState === 'playing' && (
-             <div className="absolute -right-4 top-1/2 transform -translate-y-1/2 bg-white/90 backdrop-blur-sm px-3 py-2 rounded-lg shadow-lg border border-amber-200 flex flex-col items-center gap-1 animate-float">
-                <span className="text-[10px] uppercase font-bold text-gray-500 tracking-wider">Certainty</span>
-                <div className="text-xl font-bold text-amber-600">{confidence}%</div>
-                <div className="w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+             <div className="absolute -right-2 md:-right-4 top-1/2 transform -translate-y-1/2 bg-white/90 backdrop-blur-sm px-2 py-1 md:px-3 md:py-2 rounded-lg shadow-lg border border-amber-200 flex flex-col items-center gap-1 animate-float">
+                <span className="text-[8px] md:text-[10px] uppercase font-bold text-gray-500 tracking-wider">Certainty</span>
+                <div className="text-sm md:text-xl font-bold text-amber-600">{confidence}%</div>
+                <div className="w-8 md:w-12 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                   <div 
                     className={`h-full transition-all duration-500 ${getConfidenceColor(confidence)}`} 
                     style={{ width: `${confidence}%` }}
@@ -394,7 +430,7 @@ const App: React.FC = () => {
         </div>
 
         {/* Dialogue Box */}
-        <div className="bg-white rounded-3xl p-8 shadow-2xl w-full text-center relative mb-8 border-4 border-amber-300 min-h-[160px] flex items-center justify-center flex-col">
+        <div className="bg-white rounded-3xl p-6 md:p-8 shadow-2xl w-full text-center relative mb-6 md:mb-8 border-4 border-amber-300 min-h-[140px] md:min-h-[160px] flex items-center justify-center flex-col">
           {/* Triangle pointer */}
           <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 border-l-[20px] border-l-transparent border-r-[20px] border-r-transparent border-b-[24px] border-b-amber-300"></div>
           <div className="absolute -top-4 left-1/2 transform -translate-x-1/2 border-l-[16px] border-l-transparent border-r-[16px] border-r-transparent border-b-[20px] border-b-white"></div>
@@ -407,12 +443,12 @@ const App: React.FC = () => {
              </div>
           ) : (
             <>
-              <h2 className="text-2xl md:text-3xl font-bold text-gray-800 leading-tight">
+              <h2 className="text-xl md:text-3xl font-bold text-gray-800 leading-tight">
                 {currentText}
               </h2>
               {gameState === 'playing' && (
                 <>
-                  <p className="text-xs text-gray-400 mt-2 absolute bottom-2 right-4 italic">
+                  <p className="text-[10px] md:text-xs text-gray-400 mt-2 absolute bottom-2 right-4 italic">
                     Select an option...
                   </p>
                   
@@ -420,7 +456,7 @@ const App: React.FC = () => {
                   <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2">
                     <button 
                       onClick={() => { playSound('click'); setShowHint(!showHint); }}
-                      className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-xs px-3 py-1 rounded-full shadow-sm border border-blue-200 transition-colors flex items-center gap-1"
+                      className="bg-blue-100 hover:bg-blue-200 text-blue-700 text-[10px] md:text-xs px-2 py-1 md:px-3 rounded-full shadow-sm border border-blue-200 transition-colors flex items-center gap-1 whitespace-nowrap"
                     >
                       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-3 h-3">
                         <path strokeLinecap="round" strokeLinejoin="round" d="M12 18v-5.25m0 0a6.001 6.001 0 00-5.303-7.5c2.105 1.5 5.299 1.5 7.408 0 6.002 6.002 0 015.304 7.5H12z" />
@@ -436,7 +472,7 @@ const App: React.FC = () => {
 
         {/* Hint Display */}
         {showHint && gameState === 'playing' && !isLoading && (
-          <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-800 px-4 py-2 rounded-lg text-sm italic animate-fade-in w-full text-center">
+          <div className="mb-4 bg-blue-50 border border-blue-200 text-blue-800 px-4 py-2 rounded-lg text-xs md:text-sm italic animate-fade-in w-full text-center">
             Mind Reading: "{currentThinking}"
           </div>
         )}
@@ -448,7 +484,7 @@ const App: React.FC = () => {
               <button
                 onClick={handleStart}
                 disabled={isLoading}
-                className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white text-xl font-bold py-4 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all active:scale-95 disabled:opacity-50"
+                className="w-full bg-gradient-to-r from-orange-500 to-red-600 text-white text-lg md:text-xl font-bold py-3 md:py-4 rounded-xl shadow-lg hover:shadow-xl transform hover:scale-105 transition-all active:scale-95 disabled:opacity-50"
               >
                 {isLoading ? 'Summoning Spirits...' : 'Think of a Food & Start!'}
               </button>
@@ -463,13 +499,13 @@ const App: React.FC = () => {
           )}
 
           {gameState === 'playing' && !isLoading && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4">
               {currentOptions && currentOptions.length > 0 ? (
                 currentOptions.map((opt, idx) => (
                   <button 
                     key={idx}
                     onClick={() => handleAnswer(opt)} 
-                    className={`${getOptionButtonColor(idx)} text-white font-bold py-4 rounded-xl shadow-md transition-transform active:scale-95`}
+                    className={`${getOptionButtonColor(idx)} text-white font-bold py-3 md:py-4 px-4 rounded-xl shadow-md transition-transform active:scale-95 text-sm md:text-base leading-tight`}
                   >
                     {opt}
                   </button>
@@ -501,13 +537,13 @@ const App: React.FC = () => {
                   value={realAnswerInput}
                   onChange={(e) => setRealAnswerInput(e.target.value)}
                   placeholder="e.g., Paneer Butter Masala"
-                  className="w-full p-4 rounded-xl border-2 border-amber-300 focus:border-amber-500 focus:outline-none text-lg text-center shadow-inner"
+                  className="w-full p-3 md:p-4 rounded-xl border-2 border-amber-300 focus:border-amber-500 focus:outline-none text-lg text-center shadow-inner"
                   onKeyDown={(e) => e.key === 'Enter' && handleSubmitRealAnswer()}
                 />
                 <button 
                     onClick={handleSubmitRealAnswer}
                     disabled={!realAnswerInput.trim() || isLoading}
-                    className="w-full bg-blue-600 text-white text-xl font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                    className="w-full bg-blue-600 text-white text-lg md:text-xl font-bold py-3 rounded-xl shadow-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                 >
                     {isLoading ? 'Sending...' : 'Tell Chef Genie'}
                 </button>
@@ -551,7 +587,7 @@ const App: React.FC = () => {
       {/* Knowledge Modal */}
       <Modal isOpen={showKnowledge} onClose={() => setShowKnowledge(false)} title="📜 The Menu of Knowledge">
         <div className="space-y-4">
-          <p className="text-sm text-gray-600 mb-4">I specialize in Indian Cuisine. Here are some of the dishes I can detect via my psychic waves:</p>
+          <p className="text-sm text-gray-600 mb-4">I specialize in Indian Cuisine but know global vegetarian dishes! Here are some favorites:</p>
           {Object.entries(KNOWLEDGE_BASE).map(([category, items]) => (
             <div key={category} className="mb-3">
               <h4 className="font-bold text-amber-800 text-sm mb-1">{category}</h4>
