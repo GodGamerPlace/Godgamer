@@ -42,10 +42,10 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
     if (emotion === 'thinking') {
        return (
         <g>
-          {/* Moving eyes */}
+          {/* Moving eyes with blinking */}
           <g className="animate-eyes-move">
-             <circle cx="85" cy="80" r="10" fill="#333" />
-             <circle cx="155" cy="80" r="10" fill="#333" />
+             <circle cx="85" cy="80" r="10" fill="#333" className="animate-blink" />
+             <circle cx="155" cy="80" r="10" fill="#333" className="animate-blink" />
           </g>
            <path d="M140 60 L170 50" stroke="#333" strokeWidth="4" strokeLinecap="round" />
         </g>
@@ -108,33 +108,42 @@ const Avatar: React.FC<AvatarProps> = ({ emotion }) => {
             0%, 45%, 55%, 100% { transform: scaleY(1); }
             50% { transform: scaleY(0.1); }
          }
-         .animate-blink { animation: blink 4s infinite; transform-origin: center; }
+         .animate-blink { animation: blink 4s infinite; transform-origin: center; transform-box: fill-box; }
 
          @keyframes bounce-slight {
              0%, 100% { transform: translateY(0); }
              50% { transform: translateY(-3px); }
          }
          .animate-bounce-slight { animation: bounce-slight 0.5s infinite; }
+
+         @keyframes head-tilt {
+            0%, 100% { transform: rotate(0deg); }
+            25% { transform: rotate(-3deg); }
+            75% { transform: rotate(3deg); }
+         }
+         .animate-head-tilt { animation: head-tilt 3s infinite ease-in-out; transform-origin: 120px 200px; }
       `}</style>
       <svg viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg" className="w-full h-full filter drop-shadow-2xl">
-        {/* Turban/Hat */}
-        <path d="M40 80 Q120 -20 200 80" className={getTurbanColor()} />
-        <path d="M40 80 Q120 40 200 80 L200 100 Q120 60 40 100 Z" className="fill-red-700" />
-        <circle cx="120" cy="50" r="10" className="fill-yellow-400" />
+        <g className={emotion === 'thinking' ? 'animate-head-tilt' : ''}>
+          {/* Turban/Hat */}
+          <path d="M40 80 Q120 -20 200 80" className={getTurbanColor()} />
+          <path d="M40 80 Q120 40 200 80 L200 100 Q120 60 40 100 Z" className="fill-red-700" />
+          <circle cx="120" cy="50" r="10" className="fill-yellow-400" />
 
-        {/* Head */}
-        <circle cx="120" cy="120" r="80" className={getBaseColor()} />
-        
-        {/* Ears */}
-        <circle cx="40" cy="120" r="15" className={getBaseColor()} />
-        <circle cx="200" cy="120" r="15" className={getBaseColor()} />
+          {/* Head */}
+          <circle cx="120" cy="120" r="80" className={getBaseColor()} />
+          
+          {/* Ears */}
+          <circle cx="40" cy="120" r="15" className={getBaseColor()} />
+          <circle cx="200" cy="120" r="15" className={getBaseColor()} />
 
-        {/* Face Elements */}
-        {getEyeShape()}
-        {getMouthShape()}
-        
-        {/* Beard */}
-        <path d="M120 200 L110 220 L130 220 Z" fill="#333" />
+          {/* Face Elements */}
+          {getEyeShape()}
+          {getMouthShape()}
+          
+          {/* Beard */}
+          <path d="M120 200 L110 220 L130 220 Z" fill="#333" />
+        </g>
       </svg>
       
       {/* Hands */}
