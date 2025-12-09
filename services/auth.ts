@@ -2,6 +2,12 @@ import { User } from '../types';
 
 const USERS_KEY = 'food_akinator_users_db_v2';
 const CURRENT_USER_KEY = 'food_akinator_session';
+const DONATIONS_KEY = 'food_akinator_donations_v1';
+
+export interface Donation {
+  code: string;
+  timestamp: number;
+}
 
 // Simple hash function for privacy (not military grade, but satisfies requirement)
 const hashPassword = (pwd: string) => {
@@ -172,13 +178,30 @@ export const banUser = (targetUsername: string, banStatus: boolean) => {
 
 export const getAllUsers = () => getUsers();
 
+// Donations
+export const submitDonation = (code: string) => {
+  const list = getDonations();
+  list.push({ code, timestamp: Date.now() });
+  localStorage.setItem(DONATIONS_KEY, JSON.stringify(list));
+};
+
+export const getDonations = (): Donation[] => {
+  try {
+      const data = localStorage.getItem(DONATIONS_KEY);
+      return data ? JSON.parse(data) : [];
+  } catch {
+      return [];
+  }
+};
+
 // Simulated File System for Owner
 export const getGameCode = () => {
   return [
     { name: 'App.tsx', type: 'code', size: '12kb' },
-    { name: 'services/auth.ts', type: 'code', size: '4kb' },
+    { name: 'services/auth.ts', type: 'code', size: '5kb' },
     { name: 'services/gemini.ts', type: 'code', size: '5kb' },
     { name: 'components/Avatar.tsx', type: 'code', size: '3kb' },
-    { name: 'users_db.json', type: 'data', size: `${JSON.stringify(getUsers()).length} bytes` }
+    { name: 'users_db.json', type: 'data', size: `${JSON.stringify(getUsers()).length} bytes` },
+    { name: 'donations.db', type: 'data', size: `${JSON.stringify(getDonations()).length} bytes` }
   ];
 };

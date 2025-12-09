@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { User } from '../types';
-import { getAllUsers, banUser, getGameCode } from '../services/auth';
+import { getAllUsers, banUser, getGameCode, getDonations, Donation } from '../services/auth';
 import Modal from './Modal';
 
 interface OwnerToolsProps {
@@ -9,10 +9,11 @@ interface OwnerToolsProps {
 }
 
 const OwnerTools: React.FC<OwnerToolsProps> = ({ isOpen, onClose }) => {
-  const [activeTab, setActiveTab] = useState<'users' | 'files'>('users');
+  const [activeTab, setActiveTab] = useState<'users' | 'files' | 'donations'>('users');
   const [searchTerm, setSearchTerm] = useState('');
   const [users, setUsers] = useState<User[]>(getAllUsers());
   const [fileList] = useState(getGameCode());
+  const [donations] = useState<Donation[]>(getDonations());
 
   // Refresh users list
   const refreshUsers = () => {
@@ -32,16 +33,22 @@ const OwnerTools: React.FC<OwnerToolsProps> = ({ isOpen, onClose }) => {
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="👑 Owner Control Panel">
-      <div className="flex gap-2 mb-4 border-b border-gray-200 pb-2">
+      <div className="flex gap-2 mb-4 border-b border-gray-200 pb-2 overflow-x-auto">
         <button 
           onClick={() => setActiveTab('users')}
-          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${activeTab === 'users' ? 'bg-red-100 text-red-700' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors whitespace-nowrap ${activeTab === 'users' ? 'bg-red-100 text-red-700' : 'text-gray-500 hover:bg-gray-100'}`}
         >
           User Management
         </button>
         <button 
+          onClick={() => setActiveTab('donations')}
+          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors whitespace-nowrap ${activeTab === 'donations' ? 'bg-green-100 text-green-700' : 'text-gray-500 hover:bg-gray-100'}`}
+        >
+          💰 Donations
+        </button>
+        <button 
           onClick={() => setActiveTab('files')}
-          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors ${activeTab === 'files' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
+          className={`px-4 py-2 rounded-lg font-bold text-sm transition-colors whitespace-nowrap ${activeTab === 'files' ? 'bg-blue-100 text-blue-700' : 'text-gray-500 hover:bg-gray-100'}`}
         >
           System Files
         </button>
@@ -87,6 +94,28 @@ const OwnerTools: React.FC<OwnerToolsProps> = ({ isOpen, onClose }) => {
                )}
              </div>
           </div>
+        )}
+
+        {activeTab === 'donations' && (
+           <div className="animate-fade-in space-y-4">
+             <div className="bg-green-50 p-4 rounded-lg border border-green-200 text-center">
+                <h3 className="font-bold text-green-800 text-xl">Total Donations: {donations.length}</h3>
+                <p className="text-xs text-green-600">These codes are private to you.</p>
+             </div>
+             
+             <div className="space-y-2 max-h-[220px] overflow-y-auto">
+                {donations.length === 0 ? (
+                    <p className="text-center text-gray-400 py-8">No donations yet.</p>
+                ) : (
+                    donations.slice().reverse().map((don, idx) => (
+                        <div key={idx} className="bg-white p-3 rounded-lg border border-gray-200 shadow-sm flex flex-col">
+                            <span className="font-mono text-lg font-bold text-gray-800 tracking-wider select-all">{don.code}</span>
+                            <span className="text-[10px] text-gray-400 text-right">{new Date(don.timestamp).toLocaleString()}</span>
+                        </div>
+                    ))
+                )}
+             </div>
+           </div>
         )}
 
         {activeTab === 'files' && (
