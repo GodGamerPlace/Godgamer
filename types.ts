@@ -2,6 +2,18 @@ export type Emotion = 'idle' | 'thinking' | 'happy' | 'confused' | 'confident' |
 
 export type GameState = 'start' | 'playing' | 'won' | 'lost' | 'error' | 'reveal';
 
+export type UserRole = 'user' | 'owner';
+
+export interface User {
+  username: string;
+  passwordHash: string; // Simple hash for privacy
+  role: UserRole;
+  score: number;
+  gamesPlayed: number;
+  isBanned: boolean;
+  createdAt: number;
+}
+
 export interface GameResponse {
   type: 'question' | 'guess';
   content: string;

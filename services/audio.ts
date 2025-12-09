@@ -9,6 +9,7 @@ let currentNoteIndex = 0;
 let currentTrack: 'gameplay' | 'win' | null = null;
 let masterGain: GainNode | null = null;
 let isMuted = false;
+let currentVolume = 0.5; // Default volume (0.0 to 1.0)
 
 // Initialize Audio Context
 export const initAudio = () => {
@@ -16,7 +17,7 @@ export const initAudio = () => {
     audioCtx = new AudioContext();
     masterGain = audioCtx.createGain();
     masterGain.connect(audioCtx.destination);
-    masterGain.gain.value = 0.5; // Master volume
+    masterGain.gain.value = isMuted ? 0 : currentVolume;
   }
   if (audioCtx.state === 'suspended') {
     audioCtx.resume();
@@ -24,13 +25,28 @@ export const initAudio = () => {
   return audioCtx;
 };
 
+export const setVolume = (value: number) => {
+  // Value comes in as 0-100, convert to 0-1
+  const normalized = Math.max(0, Math.min(1, value / 100));
+  currentVolume = normalized;
+  
+  if (audioCtx && masterGain && !isMuted) {
+     masterGain.gain.cancelScheduledValues(audioCtx.currentTime);
+     masterGain.gain.setValueAtTime(normalized, audioCtx.currentTime);
+  }
+};
+
+export const getVolume = () => {
+  return Math.round(currentVolume * 100);
+};
+
 export const toggleMute = (mute: boolean) => {
   isMuted = mute;
   if (audioCtx && masterGain) {
-    // Ramp to avoid clicks
     const now = audioCtx.currentTime;
+    masterGain.gain.cancelScheduledValues(now);
     masterGain.gain.setValueAtTime(masterGain.gain.value, now);
-    masterGain.gain.linearRampToValueAtTime(mute ? 0 : 0.5, now + 0.1);
+    masterGain.gain.linearRampToValueAtTime(mute ? 0 : currentVolume, now + 0.1);
   }
 };
 
@@ -223,12 +239,6 @@ const scheduler = () => {
   while (nextNoteTime < audioCtx.currentTime + scheduleAheadTime) {
     scheduleNote(currentTrack, nextNoteTime, currentNoteIndex);
     nextNoteTime += 0.25 * secondsPerBeat; // 16th notes resolution roughly (assuming 0.25 beat steps)
-    // Actually, our data is arbitrary steps. Let's assume the loop runs in 0.25 beat increments for the scheduler
-    // But our data is mapped to specific indices. 
-    // To keep it simple: we advance 1 step in the array every call.
-    // The note lengths in the array determine duration, but the grid is fixed.
-    // Let's assume the data arrays are 16th notes grid.
-    // 0.25 of a beat (Quarter note) = 16th note.
     
     currentNoteIndex++;
   }
